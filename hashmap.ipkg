@@ -5,3 +5,5 @@ sourcedir = "src"
 modules = Data.Array16
         , Data.Hashable
         , Data.HashMap
+        , Data.HashMap.Internal
+        , Data.HashSet

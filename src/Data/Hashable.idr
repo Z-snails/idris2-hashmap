@@ -19,7 +19,7 @@ defaultSalt = 14695981039346656037
 |||
 ||| Note: this is using Bits64 because it is better defined that Int
 ||| (See https://github.com/idris-lang/Idris2/issues/1048)
-export
+public export
 interface Hashable a where
     hash : a -> Bits64
     hash = hashWithSalt defaultSalt
