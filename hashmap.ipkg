@@ -1,5 +1,7 @@
 package hashmap
 
+version = 0.1.0
+
 sourcedir = "src"
 
 depends = hashable >= 0.1.0
