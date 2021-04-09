@@ -86,7 +86,7 @@ nextBitMask = \case
     BMc => BMd
     BMd => BMe
     BMe => BMf
-    BMf => BM1
+    BMf => BM0
 
 ||| Is this the last 4 bits?
 isLastBM : BitMask -> Bool
@@ -132,11 +132,10 @@ singleton : Hash -> k -> v -> HashArrayMapTrie k v
 singleton = Leaf
 
 ||| Create a HAMT from 2 keys and values, which have different hashes.
--- Hashes aren't equal
 node2 : BitMask -> Hash -> k -> v -> Hash -> k -> v -> HashArrayMapTrie k v
-node2 bm0 h0 k0 v0 h1 k1 v1 = Node $
-    write (bitMask bm0 h0) (Leaf h0 k0 v0) $
-    write (bitMask bm0 h1) (Leaf h1 k1 v1) $
+node2 bm h0 k0 v0 h1 k1 v1 = Node $
+    write (bitMask bm h0) (Leaf h0 k0 v0) $
+    write (bitMask bm h1) (Leaf h1 k1 v1) $
     new Empty
 
 mutual
@@ -163,7 +162,9 @@ mutual
         (hashWithSalt : Salt -> k -> Hash) ->
         Salt ->
         BitMask ->
-        Hash -> k -> v ->
+        Hash ->
+        k ->
+        v ->
         HashArrayMapTrie k v ->
         HashArrayMapTrie k v
     insert eq hws s0 bm0 h0 k0 v0 m0 = case m0 of
@@ -173,9 +174,9 @@ mutual
             else if k0 `eq` k1
                 then Leaf h0 k0 v0
                 else collision2 eq hws s0 h0 k0 v0 k1 v1
-        (Collision h1 s1 m1) => if h0 == h1
+        Collision h1 s1 m1 => if h0 == h1
             then Collision h1 s1
-                (insert eq hws s1 BM0 (hws s1 k0) k0 v0 m1)
+                $ insert eq hws s1 BM0 (hws s1 k0) k0 v0 m1
             else -- hashes are different so it can't be the last bit mask
                 Node $
                 update (bitMask bm0 h0) (insert eq hws s0 (nextBitMask bm0) h0 k0 v0) $
