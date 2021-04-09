@@ -13,3 +13,7 @@ main = do
     printLn $ lookup "Bah" m1
     printLn $ lookup "Foo" m1
     printLn $ lookup "Fa" m1
+    str <- getLine
+    let m2 = insert str 12 m1
+    str <- getLine
+    printLn $ lookup str m2
