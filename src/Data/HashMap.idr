@@ -11,6 +11,11 @@ export
 data HashMap : Type -> Type -> Type where
     MkHM : (eq : k -> k -> Bool) -> (hws : Bits64 -> k -> Bits64) -> HashArrayMapTrie k v -> HashMap k v
 
+||| Unsafely get the internals of a HashMap.
+export
+unsafeFoldHashMap : ((eq : k -> k -> Bool) -> (hws : Bits64 -> k -> Bits64) -> HashArrayMapTrie k v -> r) -> HashMap k v -> r
+unsafeFoldHashMap f (MkHM eq hws m) = f eq hws m
+
 ||| Lookup the value at `k` if it exists.
 export
 lookup : k -> HashMap k v -> Maybe v

@@ -2,6 +2,7 @@ module Data.HashSet
 
 import public Data.Hashable
 import Data.HashMap.Internal
+import Data.HashMap
 
 ||| A hash set.
 export
@@ -46,3 +47,8 @@ foldKeys f z (MkHS _ _ m) = foldWithKey go z m
   where
     go : k -> () -> acc -> acc
     go k _ acc = f k acc
+
+||| Turn a `HashMap` into a `HashSet`
+export
+keySet : HashMap k v -> HashSet k
+keySet m = unsafeFoldHashMap (\eq, hws, m => MkHS eq hws (ignore m)) m
