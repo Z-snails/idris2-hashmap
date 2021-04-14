@@ -121,6 +121,13 @@ data HashArrayMapTrie k v
     | Collision Hash Salt (HashArrayMapTrie k v) -- full hash
     | Node (Array16 (HashArrayMapTrie k v))
 
+export
+Functor (HashArrayMapTrie k) where
+    map _ Empty = Empty
+    map f (Leaf h k v) = Leaf h k (f v)
+    map f (Collision h s m) = Collision h s (map f m)
+    map f (Node arr) = Node (map (map f) arr)
+
 ||| An empty HAMT.
 export
 empty : HashArrayMapTrie k v
