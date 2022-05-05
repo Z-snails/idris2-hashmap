@@ -24,7 +24,7 @@ record Array16 a where
 
 export
 Functor Array16 where
-    map f = record
+    map f =
         { i_0 $= f
         , i_1 $= f
         , i_2 $= f
@@ -108,22 +108,22 @@ index i ar = case i of
 export
 write : (idx : Bits64) -> a -> Array16 a -> Array16 a
 write idx a ar = case idx of
-    0x0 => record {i_0 = a} ar
-    0x1 => record {i_1 = a} ar
-    0x2 => record {i_2 = a} ar
-    0x3 => record {i_3 = a} ar
-    0x4 => record {i_4 = a} ar
-    0x5 => record {i_5 = a} ar
-    0x6 => record {i_6 = a} ar
-    0x7 => record {i_7 = a} ar
-    0x8 => record {i_8 = a} ar
-    0x9 => record {i_9 = a} ar
-    0xa => record {i_a = a} ar
-    0xb => record {i_b = a} ar
-    0xc => record {i_c = a} ar
-    0xd => record {i_d = a} ar
-    0xe => record {i_e = a} ar
-    0xf => record {i_f = a} ar
+    0x0 => {i_0 := a} ar
+    0x1 => {i_1 := a} ar
+    0x2 => {i_2 := a} ar
+    0x3 => {i_3 := a} ar
+    0x4 => {i_4 := a} ar
+    0x5 => {i_5 := a} ar
+    0x6 => {i_6 := a} ar
+    0x7 => {i_7 := a} ar
+    0x8 => {i_8 := a} ar
+    0x9 => {i_9 := a} ar
+    0xa => {i_a := a} ar
+    0xb => {i_b := a} ar
+    0xc => {i_c := a} ar
+    0xd => {i_d := a} ar
+    0xe => {i_e := a} ar
+    0xf => {i_f := a} ar
     _ => ar
 
 ||| Update the `idx`th value.
@@ -131,22 +131,22 @@ write idx a ar = case idx of
 export
 update : (idx : Bits64) -> (a -> a) -> Array16 a -> Array16 a
 update idx f ar = case idx of
-    0x0 => record {i_0 $= f} ar
-    0x1 => record {i_1 $= f} ar
-    0x2 => record {i_2 $= f} ar
-    0x3 => record {i_3 $= f} ar
-    0x4 => record {i_4 $= f} ar
-    0x5 => record {i_5 $= f} ar
-    0x6 => record {i_6 $= f} ar
-    0x7 => record {i_7 $= f} ar
-    0x8 => record {i_8 $= f} ar
-    0x9 => record {i_9 $= f} ar
-    0xa => record {i_a $= f} ar
-    0xb => record {i_b $= f} ar
-    0xc => record {i_c $= f} ar
-    0xd => record {i_d $= f} ar
-    0xe => record {i_e $= f} ar
-    0xf => record {i_f $= f} ar
+    0x0 => {i_0 $= f} ar
+    0x1 => {i_1 $= f} ar
+    0x2 => {i_2 $= f} ar
+    0x3 => {i_3 $= f} ar
+    0x4 => {i_4 $= f} ar
+    0x5 => {i_5 $= f} ar
+    0x6 => {i_6 $= f} ar
+    0x7 => {i_7 $= f} ar
+    0x8 => {i_8 $= f} ar
+    0x9 => {i_9 $= f} ar
+    0xa => {i_a $= f} ar
+    0xb => {i_b $= f} ar
+    0xc => {i_c $= f} ar
+    0xd => {i_d $= f} ar
+    0xe => {i_e $= f} ar
+    0xf => {i_f $= f} ar
     _ => ar
 
 ||| Initial an Array with a default value.

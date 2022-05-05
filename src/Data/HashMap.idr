@@ -88,7 +88,7 @@ export
 toList : HashMap k v -> List (k, v)
 toList = foldWithKey (\k, v, acc => (k, v) :: acc) []
 
-export
+export covering
 Show k => Show v => Show (HashMap k v) where
     showPrec d hm = showCon d "fromList" $ showArg $ Data.HashMap.toList hm
 
