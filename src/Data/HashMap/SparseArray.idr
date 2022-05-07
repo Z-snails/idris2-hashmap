@@ -25,7 +25,7 @@ intToFin x = integerToFin (cast x) n
 export
 fromList : List (Int, a) -> SparseArray a
 fromList xs =
-    let xs' = sortBy (\(x, _), (y, _) => compare x y) xs
+    let xs = sortBy (\(x, _), (y, _) => compare x y) xs
         bitmap =
             foldl
                 (\acc, (idx, _) => the Bits64 $ 
