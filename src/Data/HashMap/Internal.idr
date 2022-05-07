@@ -33,13 +33,14 @@ data HAMT : (key : Type) -> (val : key -> Type) -> Type where
 %name HAMT hamt
 
 getMask : (depth : Bits64) -> Bits64
-getMask depth = baseMask `prim__shl_Bits64` (depth * 5)
+getMask depth = baseMask `prim__shl_Bits64` (depth * chunkSize)
   where
     baseMask : Bits64
     baseMask = 0b111111
 
+export
 getIndex : (depth : Bits64) -> (hash : Bits64) -> Int
-getIndex depth hash = cast $ (getMask depth .&. hash) `prim__shr_Bits64` (depth * 5)
+getIndex depth hash = cast $ (getMask depth .&. hash) `prim__shr_Bits64` (depth * chunkSize)
 
 export
 singletonWithHash : (hash : Bits64) -> (k : key) -> val k -> HAMT key val
@@ -90,6 +91,8 @@ parameters
         Maybe (k ** val k)
     lookup k hamt = lookupWithHash k (hash k) 0 hamt
 
+    -- Invariants: hash0 /= hash1
+    export
     node2 :
         (tree0 : HAMT key val) ->
         (hash0 : Bits64) ->
@@ -114,21 +117,23 @@ parameters
         HAMT key val ->
         HAMT key val
     insertWithHash k0 val0 hash0 depth hamt@(Leaf hash1 k1 val1) = if hash0 == hash1
-        then Collision hash0 (fromList [(k0 ** val0), (k1 ** val1)])
-        else node2 (singletonWithHash hash0 k0 val0) hash0 hamt hash1 depth
+        then if keyEq k0 k1 -- hashes ==
+            then singletonWithHash hash0 k0 val0 -- keys == (replace)
+            else Collision hash0 (fromList [(k0 ** val0), (k1 ** val1)]) -- keys /= (collision)
+        else node2 (singletonWithHash hash0 k0 val0) hash0 hamt hash1 depth -- hashes /=
     insertWithHash k val hash0 depth (Node arr) =
         let idx = getIndex depth hash0
          in case index idx arr of
-            Just hamt => Node $ set idx
+            Just hamt => Node $ set idx -- got entry at this index
                 (insertWithHash k val hash0 (assert_smaller depth $ depth + 1) hamt)
                 arr
-            Nothing => Node $ set idx (singletonWithHash hash0 k val) arr
+            Nothing => Node $ set idx (singletonWithHash hash0 k val) arr -- new entry at this index
     insertWithHash k val hash0 depth hamt@(Collision hash1 arr) =
         if hash0 == hash1
-            then case lookupEntry k 0 (toList arr) of
-                Just (idx, _) => Collision hash1 (update arr [(idx, (k ** val))])
-                Nothing => Collision hash1 (append (k ** val) arr)
-            else node2 (singletonWithHash hash0 k val) hash0 hamt hash1 depth
+            then case lookupEntry k 0 (toList arr) of -- hashes ==
+                Just (idx, _) => Collision hash1 (update arr [(idx, (k ** val))]) -- keys == (replace)
+                Nothing => Collision hash1 (append (k ** val) arr) -- keys /= (insert)
+            else node2 (singletonWithHash hash0 k val) hash0 hamt hash1 depth -- hashes /=
 
     export
     insert :
@@ -156,13 +161,13 @@ printTree :
     List String
 printTree indent (Leaf hash k val) = ["\{indent}(\{show k}#\{show hash})"]
 printTree indent (Node arr) =
-    "n" ::
-    (SparseArray.toList (map (printTree (indent ++ "  ")) arr)
+    "\{indent}n" ::
+    (SparseArray.toList (assert_total $ map (printTree (indent ++ "  ")) arr)
         >>= \(idx, ls) =>
             "\{indent} \{show idx}:" :: ls)
 printTree indent (Collision hash arr) =
-    [ "\{indent}c#\{show hash}"
-    , (indent
+    [ "\{indent}c#\{show hash}:"
+    , (indent ++ " "
     ++ concat (intersperse ", " $ Array.toList $ map (\(key ** _) => show key) arr))
     ]
 -}
