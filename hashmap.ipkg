@@ -1,12 +1,17 @@
 package hashmap
 
-version = 0.1.0
+version = 0.0.0
 
 sourcedir = "src"
 
-depends = hashable >= 0.1.0
+depends = hashable
 
-modules = Data.Array16
-        , Data.HashMap
-        , Data.HashMap.Internal
-        , Data.HashSet
+modules =
+    Data.HashMap.Array,
+    Data.HashMap.SparseArray,
+    Data.HashMap.Internal
+
+-- testing
+
+-- main = Test
+-- executable = test-hamt

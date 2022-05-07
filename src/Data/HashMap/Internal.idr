@@ -1,239 +1,168 @@
-||| Internal functions used by HashMap and HashSet
 module Data.HashMap.Internal
 
-import Data.Array16
+import Data.Bits
 import public Data.Hashable
+import Data.HashMap.SparseArray
+import Data.HashMap.Array
+import Decidable.Equality
 
-infix 6 `eq`
+-- import Data.List
 
-infixr 5 .&.
-infixr 4 >>
+%default total
 
-||| Binary and.
-%inline
-(.&.) : Bits64 -> Bits64 -> Bits64
-(.&.) = prim__and_Bits64
+chunkSize : Bits64
+chunkSize = 6
 
-||| Right shift.
-%inline
-(>>) : Bits64 -> Bits64 -> Bits64
-(>>) = prim__shr_Bits64
+-- 10 * 6 + 4
+-- 10 groups of 6, then one group of 4
+maxDepth : Bits64
+maxDepth = 10
 
-||| Mask for 4 bits.
+{-
+Take 6 bits at a time
+Starting from least significant bits
+-}
+
+||| A non-empty dependently-typed hash-array mapped trie
 export
-data BitMask
-    = BM0
-    | BM1
-    | BM2
-    | BM3
-    | BM4
-    | BM5
-    | BM6
-    | BM7
-    | BM8
-    | BM9
-    | BMa
-    | BMb
-    | BMc
-    | BMd
-    | BMe
-    | BMf
+data HAMT : (key : Type) -> (val : key -> Type) -> Type where
+    Leaf : (hash : Bits64) -> (k : key) -> (v : val k) -> HAMT key val
+    Node : SparseArray (HAMT key val) -> HAMT key val
+    Collision : (hash : Bits64) -> Array (k ** val k) -> HAMT key val
 
-||| Initial bit mask.
-export
-bitMask0 : BitMask
-bitMask0 = BM0
+%name HAMT hamt
 
-public export
-Hash : Type
-Hash = Bits64
+getMask : (depth : Bits64) -> Bits64
+getMask depth = baseMask `prim__shl_Bits64` (depth * 5)
+  where
+    baseMask : Bits64
+    baseMask = 0b111111
 
-||| Mask 4 bits.
-bitMask : BitMask -> Hash -> Bits64
-bitMask mask h = case mask of
-    BM0 => 0x000000000000000f .&. h >> 0x00
-    BM1 => 0x00000000000000f0 .&. h >> 0x04
-    BM2 => 0x0000000000000f00 .&. h >> 0x08
-    BM3 => 0x000000000000f000 .&. h >> 0x0c
-    BM4 => 0x00000000000f0000 .&. h >> 0x10
-    BM5 => 0x0000000000f00000 .&. h >> 0x14
-    BM6 => 0x000000000f000000 .&. h >> 0x18
-    BM7 => 0x00000000f0000000 .&. h >> 0x1c
-    BM8 => 0x0000000f00000000 .&. h >> 0x20
-    BM9 => 0x000000f000000000 .&. h >> 0x24
-    BMa => 0x00000f0000000000 .&. h >> 0x28
-    BMb => 0x0000f00000000000 .&. h >> 0x2c
-    BMc => 0x000f000000000000 .&. h >> 0x30
-    BMd => 0x00f0000000000000 .&. h >> 0x34
-    BMe => 0x0f00000000000000 .&. h >> 0x38
-    BMf => 0xf000000000000000 .&. h >> 0x3c
-
-||| Get the `BitMask` for the next 4 bits.
-nextBitMask : BitMask -> BitMask
-nextBitMask = \case
-    BM0 => BM1
-    BM1 => BM2
-    BM2 => BM3
-    BM3 => BM4
-    BM4 => BM5
-    BM5 => BM6
-    BM6 => BM7
-    BM7 => BM8
-    BM8 => BM9
-    BM9 => BMa
-    BMa => BMb
-    BMb => BMc
-    BMc => BMd
-    BMd => BMe
-    BMe => BMf
-    BMf => BM0
-
-||| Is this the last 4 bits?
-isLastBM : BitMask -> Bool
-isLastBM = \case
-    BMf => True
-    _ => False
-
-public export
-Salt : Type
-Salt = Bits64
-
-||| Get the next salt.
--- TODO: get better algorithm
-nextSalt : Salt -> Salt
-nextSalt = (2 +)
-
-||| Return just if a predicate is satisfied.
-justWhen : Bool -> Lazy a -> Maybe a
-justWhen True x = Just x
-justWhen False _ = Nothing
-
-||| Return `Nothing` is predicate is false, else return other value.
-joinWhen : Bool -> Lazy (Maybe a) -> Maybe a
-joinWhen True x = x
-joinWhen False _ = Nothing
-
-||| Internal Hash-array map trie (HAMT) that assumes the same hash and Eq is used.
-export
-data HashArrayMapTrie k v
-    = Empty
-    | Leaf Hash k v -- full hash
-    | Collision Hash Salt (HashArrayMapTrie k v) -- full hash
-    | Node (Array16 (HashArrayMapTrie k v))
+getIndex : (depth : Bits64) -> (hash : Bits64) -> Int
+getIndex depth hash = cast $ (getMask depth .&. hash) `prim__shr_Bits64` (depth * 5)
 
 export
-Functor (HashArrayMapTrie k) where
-    map _ Empty = Empty
-    map f (Leaf h k v) = Leaf h k (f v)
-    map f (Collision h s m) = Collision h s (map f m)
-    map f (Node arr) = Node (map (map f) arr)
+singletonWithHash : (hash : Bits64) -> (k : key) -> val k -> HAMT key val
+singletonWithHash = Leaf
 
-||| An empty HAMT.
 export
-empty : HashArrayMapTrie k v
-empty = Empty
+singleton : Hashable key => (k : key) -> val k -> HAMT key val
+singleton k x = singletonWithHash (hash k) k x
 
-||| A HAMT containing one key and value.
-export
-singleton : Hash -> k -> v -> HashArrayMapTrie k v
-singleton = Leaf
+parameters
+    {0 key : Type}
+    {0 val : key -> Type}
+    (keyEq : (x : key) -> (y : key) -> Bool)
 
-||| Create a HAMT from 2 keys and values, which have different hashes.
-node2 : BitMask -> Hash -> k -> v -> Hash -> k -> v -> HashArrayMapTrie k v
-node2 bm h0 k0 v0 h1 k1 v1 = Node $
-    write (bitMask bm h0) (Leaf h0 k0 v0) $
-    write (bitMask bm h1) (Leaf h1 k1 v1) $
-    new Empty
-
-mutual
-    ||| Create a HAMT from 2 keys and values, where the hashes collide.
-    collision2 : 
-        (eq : k -> k -> Bool) ->
-        (hashWithSalt : Salt -> k -> Hash) ->
-        Salt -> Hash ->
-        k -> v -> k -> v ->
-        HashArrayMapTrie k v
-    collision2 eq hws s0 h k0 v0 k1 v1 =
-        let s1 = nextSalt s0
-            h0 = hws s1 k0
-            h1 = hws s1 k1
-            m0 = insert eq hws s1 BM0 h0 k0 v0
-                $ insert eq hws s1 BM0 h1 k1 v1
-                Empty
-        in Collision h s1 m0
+    lookupEntry : (k : key) -> (idx : Int) -> List (k ** val k) -> Maybe (Int, (k ** val k))
+    lookupEntry k idx [] = Nothing
+    lookupEntry k idx (entry :: xs) = if keyEq k entry.fst
+        then Just (idx, entry)
+        else lookupEntry k (idx + 1) xs
 
     export
-    ||| Insert a key and value into a HAMT, replacing any existing values.
+    lookupWithHash :
+        (k : key) ->
+        (hash : Bits64) ->
+        (depth : Bits64) ->
+        HAMT key val ->
+        Maybe (k ** val k)
+    lookupWithHash k0 hash0 depth (Leaf hash1 k1 val) = if hash0 == hash1
+        then if keyEq k0 k1
+            then Just (k1 ** val)
+            else Nothing
+        else Nothing
+    lookupWithHash k0 hash0 depth (Node arr) =
+        let idx = getIndex depth hash0
+         in index (cast idx) arr >>=
+            lookupWithHash k0 hash0 (assert_smaller depth $ depth + 1)
+    lookupWithHash k0 hash0 depth (Collision hash1 arr) = if hash0 == hash1
+        then
+            let arrL = toList arr
+             in snd <$> lookupEntry k0 0 arrL
+        else Nothing
+
+    export
+    lookup :
+        Hashable key =>
+        (k : key) ->
+        HAMT key val ->
+        Maybe (k ** val k)
+    lookup k hamt = lookupWithHash k (hash k) 0 hamt
+
+    node2 :
+        (tree0 : HAMT key val) ->
+        (hash0 : Bits64) ->
+        (tree1 : HAMT key val) ->
+        (hash1 : Bits64) ->
+        (depth : Bits64) ->
+        HAMT key val
+    node2 hamt0 hash0 hamt1 hash1 depth =
+        let idx0 = getIndex depth hash0
+            idx1 = getIndex depth hash1
+         in Node (fromList
+            [ (idx0, hamt0)
+            , (idx1, hamt1)
+            ])
+
+    export
+    insertWithHash :
+        (k : key) ->
+        val k ->
+        (hash : Bits64) ->
+        (depth : Bits64) ->
+        HAMT key val ->
+        HAMT key val
+    insertWithHash k0 val0 hash0 depth hamt@(Leaf hash1 k1 val1) = if hash0 == hash1
+        then Collision hash0 (fromList [(k0 ** val0), (k1 ** val1)])
+        else node2 (singletonWithHash hash0 k0 val0) hash0 hamt hash1 depth
+    insertWithHash k val hash0 depth (Node arr) =
+        let idx = getIndex depth hash0
+         in case index idx arr of
+            Just hamt => Node $ set idx
+                (insertWithHash k val hash0 (assert_smaller depth $ depth + 1) hamt)
+                arr
+            Nothing => Node $ set idx (singletonWithHash hash0 k val) arr
+    insertWithHash k val hash0 depth hamt@(Collision hash1 arr) =
+        if hash0 == hash1
+            then case lookupEntry k 0 (toList arr) of
+                Just (idx, _) => Collision hash1 (update arr [(idx, (k ** val))])
+                Nothing => Collision hash1 (append (k ** val) arr)
+            else node2 (singletonWithHash hash0 k val) hash0 hamt hash1 depth
+
+    export
     insert :
-        (eq : k -> k -> Bool) ->
-        (hashWithSalt : Salt -> k -> Hash) ->
-        Salt ->
-        BitMask ->
-        Hash ->
-        k ->
-        v ->
-        HashArrayMapTrie k v ->
-        HashArrayMapTrie k v
-    insert eq hws s0 bm0 h0 k0 v0 m0 = case m0 of
-        Empty => Leaf h0 k0 v0
-        Leaf h1 k1 v1 => if h0 /= h1
-            then node2 bm0 h0 k0 v0 h1 k1 v1
-            else if k0 `eq` k1
-                then Leaf h0 k0 v0
-                else collision2 eq hws s0 h0 k0 v0 k1 v1
-        Collision h1 s1 m1 => if h0 == h1
-            then Collision h1 s1
-                $ insert eq hws s1 BM0 (hws s1 k0) k0 v0 m1
-            else -- hashes are different so it can't be the last bit mask
-                Node $
-                update (bitMask bm0 h0) (insert eq hws s0 (nextBitMask bm0) h0 k0 v0) $
-                write (bitMask bm0 h1) m0 $
-                new Empty
-        Node ar =>
-            Node $ update (bitMask bm0 h0)
-            (insert eq hws s0 (nextBitMask bm0) h0 k0 v0) ar
+        Hashable key =>
+        (k : key) ->
+        val k ->
+        HAMT key val ->
+        HAMT key val
+    insert k x hamt = insertWithHash k x (hash k) 0 hamt
 
-||| Delete a key and value from a HAMT.
 export
-delete :
-    (eq : k -> k -> Bool) ->
-    (hashWithSalt : Salt -> k -> Hash) ->
-    BitMask ->
-    Hash -> k ->
-    HashArrayMapTrie k v ->
-    HashArrayMapTrie k v
-delete eq hws bm0 h0 k0 m0 = case m0 of
-    Empty => Empty
-    Leaf h1 k1 v1 => if h0 == h1 && k0 `eq` k1
-        then Empty
-        else Leaf h1 k1 v1
-    Collision h1 s1 m1 => if h0 == h1
-        then Collision h1 s1
-            $ delete eq hws BM0 (hws s1 k0) k0 m1
-        else m0
-    Node ar => Node $ update (bitMask bm0 h0) (delete eq hws (nextBitMask bm0) h0 k0) ar
+trieMap : ({k : _} -> val0 k -> val1 k) -> HAMT key val0 -> HAMT key val1
+trieMap f (Leaf hash k v) = Leaf hash k (f v)
+trieMap f (Node arr) = Node $ assert_total $ map (trieMap f) arr
+trieMap f (Collision hash arr) = Collision hash $ map ({ snd $= f }) arr
 
-||| Lookup a value at a key in a HAMT.
-export
-lookup :
-    (eq : k -> k -> Bool) ->
-    (hashWithSalt : Salt -> k -> Hash) ->
-    BitMask ->
-    Hash -> k ->
-    HashArrayMapTrie k v ->
-    Maybe v
-lookup eq hws bm0 h0 k0 m0 = case m0 of
-    Empty => Nothing
-    Leaf h1 k1 v => justWhen (h0 == h1 && k0 `eq` k1) v
-    Collision h1 s m1 => joinWhen (h0 == h1)
-        $ lookup eq hws BM0 (hws s k0) k0 m1
-    Node ar => lookup eq hws (nextBitMask bm0) h0 k0 $ index (bitMask bm0 h0) ar
+{-
+-- testing
 
-||| Fold a HAMT with the key and value.
-||| Note: this is based on the order of the hash not the key.
 export
-foldWithKey : (k -> v -> acc -> acc) -> acc -> HashArrayMapTrie k v -> acc
-foldWithKey _ z Empty = z
-foldWithKey f z (Leaf _ k v) = f k v z
-foldWithKey f z (Collision _ _ m) = foldWithKey f z m
-foldWithKey f z (Node ar) = foldr (flip $ foldWithKey f) z ar
+printTree :
+    Show key =>
+    String ->
+    HAMT key val ->
+    List String
+printTree indent (Leaf hash k val) = ["\{indent}(\{show k}#\{show hash})"]
+printTree indent (Node arr) =
+    "n" ::
+    (SparseArray.toList (map (printTree (indent ++ "  ")) arr)
+        >>= \(idx, ls) =>
+            "\{indent} \{show idx}:" :: ls)
+printTree indent (Collision hash arr) =
+    [ "\{indent}c#\{show hash}"
+    , (indent
+    ++ concat (intersperse ", " $ Array.toList $ map (\(key ** _) => show key) arr))
+    ]
+-}
