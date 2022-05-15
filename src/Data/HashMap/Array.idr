@@ -8,28 +8,31 @@ import Data.List
 
 %default total
 
+-- index differently
 %spec f
 copyFromArrayBy :
     (from : ArrayData a) ->
     (to : ArrayData b) ->
-    (idx : Int) ->
-    (len : Int) ->
+    (idxFrom : Int) ->
+    (idxTo : Int) ->
+    (lenFrom : Int) ->
     (f : a -> b) ->
     IO ()
-copyFromArrayBy from to idx len f = if idx < len
+copyFromArrayBy from to idxFrom idxTo lenFrom f = if idxFrom < lenFrom
     then do
-        val <- fromPrim $ prim__arrayGet from idx
-        fromPrim $ prim__arraySet to idx (f val)
-        copyFromArrayBy from to (assert_smaller idx $ idx + 1) len f
+        val <- fromPrim $ prim__arrayGet from idxFrom
+        fromPrim $ prim__arraySet to idxTo (f val)
+        copyFromArrayBy from to (assert_smaller idxFrom $ idxFrom + 1) (idxTo + 1) lenFrom f
     else pure ()
 
 copyFromArray :
     (from : ArrayData a) ->
     (to : ArrayData a) ->
-    (idx : Int) ->
-    (len : Int) ->
+    (idxFrom : Int) ->
+    (idxTo : Int) ->
+    (lenFrom : Int) ->
     IO ()
-copyFromArray from to idx len = copyFromArrayBy from to idx len id
+copyFromArray from to idxFrom idxTo lenFrom = copyFromArrayBy from to idxFrom idxTo lenFrom id
 
 copyFromList : ArrayData a -> List a -> Int -> IO ()
 copyFromList arr [] idx = pure ()
@@ -55,6 +58,7 @@ fromList [] = Empty
 fromList (x :: xs) = unsafePerformIO $ do
     let len = 1 + cast (length xs)
     arr <- fromPrim $ prim__newArray len x
+    fromPrim $ prim__arraySet arr 0 x
     copyFromList arr xs 1
     pure $ MkArray len arr
 
@@ -90,7 +94,8 @@ update Empty xs = Empty
 update (MkArray len arr) xs@(_ :: _) = unsafePerformIO $ do
     init <- fromPrim $ prim__arrayGet arr 0 -- Safety: len >= 1
     arr' <- fromPrim $ prim__newArray len init
-    copyFromArray arr arr' 1 len
+    fromPrim $ prim__arraySet arr 0 init
+    copyFromArray arr arr' 1 1 len
     updateFromList arr' xs len
     pure $ MkArray len arr'
   where
@@ -108,15 +113,34 @@ export
 insert : (idx : Int) -> (val : a) -> Array a -> Array a
 insert 0 val Empty = fromList [val]
 insert _ val Empty = Empty
-insert idx val (MkArray len arr) = if idx <= len
+insert idx val arr@(MkArray len orig) = if idx <= len
     then unsafePerformIO $ do
-        init <- fromPrim $ prim__arrayGet arr 0
-        arr' <- fromPrim $ prim__newArray (len + 1) init
-        copyFromArray arr arr' 0 idx
-        fromPrim $ prim__arraySet arr' idx val
-        copyFromArray arr arr' (idx + 1) (len + 1)
-        pure $ MkArray (len + 1) arr'
-    else MkArray len arr
+        init <- fromPrim $ prim__arrayGet orig 0
+        new <- fromPrim $ prim__newArray (len + 1) init
+        _ <- copyFromArray orig new 0 0 idx
+        _ <- fromPrim $ prim__arraySet new idx val
+        _ <- copyFromArray orig new idx (idx + 1) len
+        pure $ MkArray (len + 1) new
+    else arr
+
+export
+delete : (idx : Int) -> Array a -> Array a
+delete idx Empty = Empty
+delete idx arr@(MkArray len orig) = if idx < len
+    then unsafePerformIO $ do
+        init <- fromPrim $ prim__arrayGet orig 0
+        new <- fromPrim $ prim__newArray (len - 1) init
+        copyFromArray orig new 0 0 idx
+        copyFromArray orig new (idx + 1) idx len
+        pure $ MkArray (len - 1) new
+    else arr
+
+export
+findIndex : (a -> Bool) -> Array a -> List Int
+findIndex f arr =
+    mapMaybe
+        (\idx => if f !(index arr idx) then Just idx else Nothing)
+        [0 .. length arr - 1]
 
 export
 append : (val : a) -> Array a -> Array a
@@ -129,9 +153,33 @@ Functor Array where
         unsafePerformIO $ do
             init <- fromPrim $ prim__arrayGet arr 0
             arr' <- fromPrim $ prim__newArray len (f init)
-            copyFromArrayBy arr arr' 1 len f
+            fromPrim $ prim__arraySet arr' 0 (f init)
+            copyFromArrayBy arr arr' 1 1 len f
             pure arr'
 
 export
 Show a => Show (Array a) where
-    show arr = "[" ++ fastConcat (intersperse "," (toList (map show arr))) ++ "]" 
+    show = show . Array.toList
+
+parameters (pred : a -> b -> Bool)
+    allFrom : Int -> Array a -> Array b -> Bool
+    allFrom idx arr1 arr2 = if length arr1 <= idx || length arr2 <= idx
+        then True
+        else
+            let x = index arr1 idx
+                y = index arr2 idx
+             in fromMaybe False [| pred x y |]
+                && allFrom (assert_smaller idx $ idx + 1) arr1 arr2
+
+    ||| Check if 
+    export
+    all : Array a -> Array b -> Bool
+    all = allFrom 0
+
+export
+Eq a => Eq (Array a) where
+    Empty == Empty = True
+    x@(MkArray l1 _) == y@(MkArray l2 _) =
+        l1 == l2
+        && all (==) x y
+    _ == _ = False

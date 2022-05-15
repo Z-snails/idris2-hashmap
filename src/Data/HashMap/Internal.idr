@@ -144,6 +144,49 @@ parameters
         HAMT key val
     insert k x hamt = insertWithHash k x (hash k) 0 hamt
 
+    export
+    deleteWithHash :
+        Hashable key =>
+        (k : key) ->
+        (hash : Bits64) ->
+        (depth : Bits64) ->
+        HAMT key val ->
+        Maybe (HAMT key val)
+    deleteWithHash k0 h0 depth hamt@(Leaf h1 k1 _) =
+        if h0 == h1 && keyEq k0 k1
+            then Nothing
+            else Just hamt
+    deleteWithHash k hash depth hamt0@(Node arr) =
+        let idx = getIndex depth hash
+         in case index idx arr of
+            Just hamt1 => case deleteWithHash k hash (assert_smaller depth $ depth + 1) hamt1 of
+                Just hamt2 => Just $ Node $ set idx hamt2 arr
+                Nothing =>
+                    let arr' = delete idx arr
+                     in if length arr' == 0
+                        then Nothing
+                        else Just $ Node arr'
+            Nothing => Just hamt0
+    deleteWithHash k h0 depth hamt@(Collision h1 arr) =
+        if h0 == h1
+            then case findIndex (keyEq k . fst) arr of
+                [] => Just hamt
+                idx :: _ =>
+                    let arr' = delete idx arr
+                     in case length arr' of
+                        0 => Nothing
+                        1 => map (\(key ** val) => Leaf h1 key val) $ index arr 0
+                        _ => Just $ Collision h1 arr'
+            else Just hamt
+
+    export
+    delete :
+        Hashable key =>
+        (k : key) ->
+        HAMT key val ->
+        Maybe (HAMT key val)
+    delete k hamt = deleteWithHash k (hash k) 0 hamt
+
 export
 trieMap : ({k : _} -> val0 k -> val1 k) -> HAMT key val0 -> HAMT key val1
 trieMap f (Leaf hash k v) = Leaf hash k (f v)
