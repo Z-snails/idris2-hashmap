@@ -10,8 +10,3 @@ modules =
     Data.HashMap.Array,
     Data.HashMap.SparseArray,
     Data.HashMap.Internal
-
--- testing
-
--- main = Test
--- executable = test-hamt
