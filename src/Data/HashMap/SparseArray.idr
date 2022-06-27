@@ -22,7 +22,6 @@ empty = MkSparseArray zeroBits empty
 intToFin : {n : _} -> Int -> Maybe (Fin n)
 intToFin x = integerToFin (cast x) n
 
-export
 intSortNub : List (Int, a) -> List (Int, a) -> List (Int, a)
 intSortNub [] acc = acc
 intSortNub lst@(x :: xs) acc =
@@ -63,17 +62,6 @@ findIndex : Int -> Bits64 -> Int
 findIndex idx bitmap =
     let mask = oneBits `prim__shr_Bits64` cast (64 - idx)
      in cast $ popCount $ bitmap .&. mask
-  where
-    popCount : Bits64 -> Bits64
-    popCount x0 =
-        let x1 = (x0 .&. 0x5555555555555555) +
-                ((x0 `shiftR` 1) .&. 0x5555555555555555)
-            x2 = (x1 .&. 0x3333333333333333)
-                + ((x1 `shiftR` 2) .&. 0x3333333333333333)
-            x3 = ((x2 + (x2 `shiftR` 4)) .&. 0x0F0F0F0F0F0F0F0F)
-            x4 = (x3 * 0x0101010101010101) `shiftR` 56
-        in cast x4
-
 
 export
 index : (idx : Int) -> (arr : SparseArray a) -> Maybe a
@@ -107,7 +95,7 @@ delete idx arr = if hasEntry idx arr
     then
         let arrIdx = findIndex idx arr.bitmap
          in MkSparseArray
-            { bitmap = maybe arr.bitmap (clearBit arr.bitmap) (intToFin arrIdx)
+            { bitmap = maybe arr.bitmap (clearBit arr.bitmap) (intToFin idx)
             , array = delete arrIdx arr.array
             }
     else arr
@@ -121,12 +109,20 @@ indexes : SparseArray a -> List Int
 indexes arr = filter (\idx => hasEntry idx arr) [0..63]
 
 export
-toList : SparseArray a -> List (Int, a)
-toList arr = zip (indexes arr) (toList arr.array)
-
-export
 Functor SparseArray where
     map f arr = MkSparseArray arr.bitmap (map f arr.array)
+
+export
+Foldable SparseArray where
+    foldr f z arr = foldr f z arr.array
+    foldl f z arr = foldl f z arr.array
+    null arr = arr.bitmap == 0
+    toList arr = toList arr.array
+    foldMap f arr = foldMap f arr.array
+
+export
+toList : SparseArray a -> List (Int, a)
+toList arr = zip (indexes arr) (toList arr)
 
 export
 Show a => Show (SparseArray a) where
