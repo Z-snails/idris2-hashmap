@@ -16,15 +16,15 @@ spec : Group
 spec = MkGroup "Data.HashMap.Array" [
     ("toList . fromList", withTests 1000 $ property $ do
         xs <- forAll listGen
-        xs === Array.toList (Array.fromList xs)
+        xs === toList (fromList xs)
     ),
     ("length empty = 0", withTests 10 $ property $ do
-        empty {a=Int} === Array.fromList []
+        empty {a=Int} === fromList []
     ),
     ("index correct", withTests 1000 $ property $ do
         xs <- forAll listGen
         idx <- forAll $ nat $ exponential 0 1000
-        getAt idx xs === index (Array.fromList xs) (cast idx)
+        getAt idx xs === index (fromList xs) (cast idx)
     ),
     ("insert/index,length", withTests 1000 $ property $ do
         arr <- forAll arrayGen

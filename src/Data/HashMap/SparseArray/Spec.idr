@@ -33,6 +33,6 @@ spec = MkGroup "Data.HashMap.SparseArray" [
         idx <- forAll $ int (linear 0 63)
         val <- forAll $ int (linear 0 1000)
         set idx val sarr === SA.fromList ((idx, val) :: SA.toList sarr)
-        -- index idx (set idx val sarr) === Just val
+        index idx (set idx val sarr) === Just val
     )
 ]
