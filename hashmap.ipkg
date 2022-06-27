@@ -7,6 +7,9 @@ sourcedir = "src"
 depends = hashable
 
 modules =
+    Data.HashMap,
+    Data.HashSet,
+    Data.HashMap.Dependant,
     Data.HashMap.Array,
     Data.HashMap.SparseArray,
     Data.HashMap.Internal
