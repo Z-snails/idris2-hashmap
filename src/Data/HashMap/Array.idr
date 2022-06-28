@@ -4,7 +4,7 @@ import Data.Fin
 import Data.IOArray.Prims
 import Data.List
 
--- eventually this will be its own package
+-- eventually this may be its own package
 
 %default total
 
@@ -71,10 +71,6 @@ toListOnto xs@(MkArray len arr) acc =
         _ => toListOnto (assert_smaller xs $ MkArray (len - 1) arr) (last :: acc)
 
 export
-toList : Array a -> List a
-toList arr = toListOnto arr []
-
-export
 length : Array a -> Int
 length Empty = 0
 length (MkArray len x) = len
@@ -127,20 +123,28 @@ export
 delete : (idx : Int) -> Array a -> Array a
 delete idx Empty = Empty
 delete idx arr@(MkArray len orig) = if idx < len
-    then unsafePerformIO $ do
+    then if len <= 1 then Empty else
+        unsafePerformIO $ do
         init <- fromPrim $ prim__arrayGet orig 0
         new <- fromPrim $ prim__newArray (len - 1) init
+        -- orig: 0 .. idx, new: 0 .. idx
         copyFromArray orig new 0 0 idx
+        -- orig: idx + 1 .. len, new: idx .. len - 1
         copyFromArray orig new (idx + 1) idx len
         pure $ MkArray (len - 1) new
     else arr
 
 export
 findIndex : (a -> Bool) -> Array a -> List Int
-findIndex f arr =
-    mapMaybe
-        (\idx => if f !(index arr idx) then Just idx else Nothing)
-        [0 .. length arr - 1]
+findIndex f arr = findIndexOnto 0 []
+  where
+    findIndexOnto : Int -> List Int -> List Int
+    findIndexOnto idx acc = if idx < length arr
+        then findIndexOnto (assert_smaller idx $ idx + 1)
+            (if maybe False f (index arr idx)
+                then idx :: acc
+                else acc)
+        else acc
 
 export
 append : (val : a) -> Array a -> Array a
@@ -157,9 +161,48 @@ Functor Array where
             copyFromArrayBy arr arr' 1 1 len f
             pure arr'
 
+foldrImpl :
+    {0 elem : _} ->
+    (f : elem -> acc -> acc) ->
+    acc ->
+    Int ->
+    ArrayData elem ->
+    acc
+foldrImpl f z 0 arr = z
+foldrImpl f z i arr =
+    let elem = unsafePerformIO $ fromPrim $ prim__arrayGet arr i
+     in foldrImpl f (f elem z) (assert_smaller i $ i - 1) arr
+
+foldlImpl :
+    {0 elem : _} ->
+    (f : acc -> elem -> acc) ->
+    acc ->
+    (index : Int) ->
+    (length : Int) ->
+    ArrayData elem ->
+    acc
+foldlImpl f z i len arr =
+    if i >= len
+        then z
+        else
+            let elem = unsafePerformIO $ fromPrim $ prim__arrayGet arr i
+             in foldlImpl f z (assert_smaller i $ i + 1) len arr
+
+export
+Foldable Array where
+    foldr f z Empty = z
+    foldr f z (MkArray len arr) = foldrImpl f z (len - 1) arr
+
+    foldl f z Empty = z
+    foldl f z (MkArray len arr) = foldlImpl f z 0 len arr
+
+    null arr = length (arr) == 0
+    toList arr = toListOnto arr []
+    foldMap f arr = foldr (\elem, acc => f elem <+> acc) neutral arr
+
 export
 Show a => Show (Array a) where
-    show = show . Array.toList
+    show = show . toList
 
 parameters (pred : a -> b -> Bool)
     allFrom : Int -> Array a -> Array b -> Bool

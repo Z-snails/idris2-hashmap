@@ -16,7 +16,7 @@ Hashable BadHash where
     hashWithSalt _ x = hash x
 
 Show BadHash where
-    show x = show x.inner
+    show x = "MkBadHash \{show x.inner}"
 
 Eq BadHash where
     x == y = x.inner == y.inner
@@ -24,6 +24,10 @@ Eq BadHash where
 data Act : key -> val -> Type where
     Insert : key -> val -> Act key val
     Delete : key -> Act key val
+
+Show key => Show val => Show (Act key val) where
+    show (Insert k v) = "insert \{show k} \{show v}"
+    show (Delete k) = "delete \{show k}"
 
 runAct : Hashable key => Eq key => HashMap key val -> Act key val -> HashMap key val
 runAct hm (Insert key val) = insert key val hm
@@ -45,17 +49,15 @@ spec = MkGroup "Data.HashMap" [
         hm <- forAll $ genHashmap (int (linear 0 1000)) (int (linear 0 1000))
         key <- forAll $ int (linear 0 1000)
         val <- forAll $ int (linear 0 1000)
-        unless (lookup key (insert key val hm) == Just val) $ failWith Nothing (show @{Raw} hm)
         lookup key (insert key val hm) === Just val
         lookup key (delete key hm) === Nothing
     ),
     ("collisions: lookup/insert,delete", withTests 1000 $ property $ do
         hm <- forAll $ genHashmap
             (MkBadHash <$> int (linear 0 1000))
-            (MkBadHash <$> int (linear 0 1000))
+            (int (linear 0 1000))
         key <- forAll $ MkBadHash <$> int (linear 0 1000)
-        val <- forAll $ MkBadHash <$> int (linear 0 1000)
-        unless (lookup key (insert key val hm) == Just val) $ failWith Nothing (show @{Raw} hm)
+        val <- forAll $ int (linear 0 1000)
         lookup key (insert key val hm) === Just val
         lookup key (delete key hm) === Nothing
     )
