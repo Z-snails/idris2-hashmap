@@ -6,8 +6,6 @@ import Data.HashMap.SparseArray
 import Data.HashMap.Array
 import Decidable.Equality
 
--- import Data.List
-
 %default total
 
 chunkSize : Bits64
@@ -159,23 +157,26 @@ parameters
     deleteWithHash k hash depth hamt0@(Node arr) =
         let idx = getIndex depth hash
          in case index idx arr of
-            Just hamt1 => case deleteWithHash k hash (assert_smaller depth $ depth + 1) hamt1 of
+            Just hamt1 => case deleteWithHash k hash (depth + 1) (assert_smaller hamt0 hamt1) of
                 Just hamt2 => Just $ Node $ set idx hamt2 arr
                 Nothing =>
                     let arr' = delete idx arr
-                     in if length arr' == 0
-                        then Nothing
-                        else Just $ Node arr'
+                     in case length arr' of
+                        0 => Nothing
+                        1 => case index arr'.array 0 of
+                            Just (Node _) => Just $ Node arr'
+                            hamt2 => hamt2
+                        _ => Just $ Node arr'
             Nothing => Just hamt0
     deleteWithHash k h0 depth hamt@(Collision h1 arr) =
         if h0 == h1
             then case findIndex (keyEq k . fst) arr of
                 [] => Just hamt
-                idx :: _ =>
+                idx :: _ => -- _ should always be empty
                     let arr' = delete idx arr
                      in case length arr' of
                         0 => Nothing
-                        1 => map (\(key ** val) => Leaf h1 key val) $ index arr 0
+                        1 => map (\(key ** val) => Leaf h1 key val) $ index arr' 0
                         _ => Just $ Collision h1 arr'
             else Just hamt
 
@@ -193,24 +194,8 @@ trieMap f (Leaf hash k v) = Leaf hash k (f v)
 trieMap f (Node arr) = Node $ assert_total $ map (trieMap f) arr
 trieMap f (Collision hash arr) = Collision hash $ map ({ snd $= f }) arr
 
-{-
--- testing
-
 export
-printTree :
-    Show key =>
-    String ->
-    HAMT key val ->
-    List String
-printTree indent (Leaf hash k val) = ["\{indent}(\{show k}#\{show hash})"]
-printTree indent (Node arr) =
-    "\{indent}n" ::
-    (SparseArray.toList (assert_total $ map (printTree (indent ++ "  ")) arr)
-        >>= \(idx, ls) =>
-            "\{indent} \{show idx}:" :: ls)
-printTree indent (Collision hash arr) =
-    [ "\{indent}c#\{show hash}:"
-    , (indent ++ " "
-    ++ concat (intersperse ", " $ Array.toList $ map (\(key ** _) => show key) arr))
-    ]
--}
+foldWithKey : ((k : _) -> val k -> acc -> acc) -> acc -> HAMT key val -> acc
+foldWithKey f z (Leaf hash k v) = f k v z
+foldWithKey f z (Node arr) = assert_total $ foldr (\trie, acc => foldWithKey f acc trie) z arr
+foldWithKey f z (Collision hash arr) = foldr (\(k ** v), acc => f k v z) z arr
