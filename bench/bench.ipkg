@@ -23,7 +23,7 @@ main = Main
 
 -- name of executable
 executable = "bench"
--- opts =
+--opts = "--profile"
 sourcedir = "src"
 -- builddir =
 -- outputdir =

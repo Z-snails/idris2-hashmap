@@ -1,7 +1,7 @@
 module Data.HashMap.SparseArray
 
+import Data.HashMap.Bits
 import public Data.HashMap.Array
-import Data.Bits
 import Data.List
 
 %default total
@@ -17,68 +17,52 @@ record SparseArray a where
 
 export
 empty : SparseArray a
-empty = MkSparseArray zeroBits empty
+empty = MkSparseArray 0 empty
 
-intToFin : {n : _} -> Int -> Maybe (Fin n)
-intToFin x = integerToFin (cast x) n
-
-intSortNub : List (Int, a) -> List (Int, a) -> List (Int, a)
-intSortNub [] acc = acc
-intSortNub lst@(x :: xs) acc =
+bits32SortNub : List (Bits32, a) -> List (Bits32, a) -> List (Bits32, a)
+bits32SortNub [] acc = acc
+bits32SortNub lst@(x :: xs) acc =
     let (lt, gt) = seperate (fst x) xs [] []
-     in intSortNub (assert_smaller lst lt) $ x :: intSortNub (assert_smaller lst gt) acc
+     in bits32SortNub (assert_smaller lst lt) $ x :: bits32SortNub (assert_smaller lst gt) acc
   where
-    seperate : Int -> List (Int, a) -> (lt : List (Int, a)) -> (gt : List (Int, a)) -> (List (Int, a), List (Int, a))
+    seperate : Bits32 -> List (Bits32, a) -> (lt : List (Bits32, a)) -> (gt : List (Bits32, a)) -> (List (Bits32, a), List (Bits32, a))
     seperate x [] lt gt = (lt, gt)
     seperate x (y :: xs) lt gt = case compare (fst y) x of
         LT => seperate x xs (y :: lt) gt
         EQ => seperate x xs lt gt
         GT => seperate x xs lt (y :: gt)
 
-getBit : Int -> Bits64
-getBit k = 1 `prim__shl_Bits64` cast k
-
 export %inline
-singleton : (Int, a) -> SparseArray a
-singleton (k, v) = MkSparseArray (getBit k) (Array.singleton v)
+singleton : (Bits32, a) -> SparseArray a
+singleton (k, v) = MkSparseArray (bit k) (Array.singleton v)
 
 export
-doubleton : (Int, a) -> (Int, a) -> SparseArray a
+doubleton : (Bits32, a) -> (Bits32, a) -> SparseArray a
 doubleton (k0, v0) (k1, v1) = case compare k0 k1 of
-    LT => MkSparseArray (getBit k0 .|. getBit k1) (fromList [v0, v1])
+    LT => MkSparseArray (bit k0 .|. bit k1) (fromList [v0, v1])
     EQ => singleton (k1, v1)
-    GT => MkSparseArray (getBit k1 .|. getBit k0) (fromList [v1, v0])
+    GT => MkSparseArray (bit k1 .|. bit k0) (fromList [v1, v0])
 
 export
-fromList : List (Int, a) -> SparseArray a
+fromList : List (Bits32, a) -> SparseArray a
 fromList xs =
-    let xs = intSortNub xs []
-        bitmap =
-            foldl
-                (\acc, (idx, _) => the Bits64 $ 
-                    maybe
-                        acc
-                        (setBit acc)
-                        (intToFin idx))
-                zeroBits
-                xs
+    let xs = bits32SortNub xs []
+        bitmap = foldl (\acc, (idx, _) => setBit acc idx) 0 xs
         arr = Array.fromList (map snd xs)
      in MkSparseArray bitmap arr
 
 export
-hasEntry : Int -> SparseArray a -> Bool
-hasEntry idx arr = case intToFin idx of
-    Nothing => False
-    Just idx => testBit arr.bitmap idx
+hasEntry : Bits32 -> SparseArray a -> Bool
+hasEntry idx arr = testBit arr.bitmap idx
 
 export
-findIndex : Int -> Bits64 -> Int
+findIndex : Bits32 -> Bits64 -> Bits32
 findIndex idx bitmap =
-    let mask = oneBits `prim__shr_Bits64` cast (64 - idx)
+    let mask = oneBits `shiftR` cast (64 - idx)
      in cast $ popCount $ bitmap .&. mask
 
 export
-index : (idx : Int) -> (arr : SparseArray a) -> Maybe a
+index : (idx : Bits32) -> (arr : SparseArray a) -> Maybe a
 index idx arr = if hasEntry idx arr
     then
         let arrIdx = findIndex idx arr.bitmap
@@ -86,7 +70,7 @@ index idx arr = if hasEntry idx arr
     else Nothing
 
 export
-set : (idx : Int) -> (val : a) -> (arr : SparseArray a) -> SparseArray a
+set : (idx : Bits32) -> (val : a) -> (arr : SparseArray a) -> SparseArray a
 set sparseIdx val arr =
     if hasEntry sparseIdx arr 
         then
@@ -96,7 +80,7 @@ set sparseIdx val arr =
                 , array = update arr.array [(arrIdx, val)]
                 }
         else
-            let bitmap = maybe arr.bitmap (setBit arr.bitmap) (intToFin sparseIdx)
+            let bitmap = setBit arr.bitmap sparseIdx
                 arrIdx = findIndex sparseIdx bitmap
              in MkSparseArray
                 { bitmap
@@ -104,22 +88,22 @@ set sparseIdx val arr =
                 }
 
 export
-delete : (idx : Int) -> (arr : SparseArray a) -> SparseArray a
+delete : (idx : Bits32) -> (arr : SparseArray a) -> SparseArray a
 delete idx arr = if hasEntry idx arr
     then
         let arrIdx = findIndex idx arr.bitmap
          in MkSparseArray
-            { bitmap = maybe arr.bitmap (clearBit arr.bitmap) (intToFin idx)
+            { bitmap = clearBit arr.bitmap idx
             , array = delete arrIdx arr.array
             }
     else arr
 
 export
 length : SparseArray a -> Nat
-length arr = popCount arr.bitmap
+length arr = cast $ popCount arr.bitmap
 
 export
-indexes : SparseArray a -> List Int
+indexes : SparseArray a -> List Bits32
 indexes arr = filter (\idx => hasEntry idx arr) [0..63]
 
 export
@@ -135,7 +119,7 @@ Foldable SparseArray where
     foldMap f arr = foldMap f arr.array
 
 export
-toList : SparseArray a -> List (Int, a)
+toList : SparseArray a -> List (Bits32, a)
 toList arr = zip (indexes arr) (toList arr)
 
 export

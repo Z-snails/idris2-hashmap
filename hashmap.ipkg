@@ -8,8 +8,9 @@ depends = hashable
 
 modules =
     Data.HashMap,
-    Data.HashSet,
-    Data.HashMap.Dependant,
     Data.HashMap.Array,
+    Data.HashMap.Bits,
+    Data.HashMap.Dependant,
+    Data.HashMap.Internal,
     Data.HashMap.SparseArray,
-    Data.HashMap.Internal
+    Data.HashSet

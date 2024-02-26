@@ -23,7 +23,7 @@ main = Spec
 
 -- name of executable
 executable = "hashmap-test"
--- opts =
+--opts = "--profile"
 sourcedir = "src"
 -- builddir =
 -- outputdir =

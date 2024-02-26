@@ -28,8 +28,8 @@ spec = MkGroup "Data.HashMap.Array" [
     ),
     ("insert/index,length", withTests 1000 $ property $ do
         arr <- forAll arrayGen
-        idx <- forAll $ int (linear 0 (length arr))
-        val <- forAll $ int (linear 0 1000)
+        idx <- forAll $ bits32 $ linear 0 $ cast $ length arr
+        val <- forAll $ int $ linear 0 1000
         let arr' = insert idx val arr
         index arr' idx === Just val
         length arr' === length arr + 1

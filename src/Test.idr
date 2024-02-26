@@ -26,15 +26,12 @@ test name testCase = do
 
 main : IO ()
 main = do
-  let hm = empty
-  putStrLn $ show @{Raw} hm
-  let hm = insert "" 0 hm
-  putStrLn $ show @{Raw} hm
-  let hm = insert "" 0 hm
-  putStrLn $ show @{Raw} hm
-  let hm = delete "" hm
+  let hm = the (HashMap Int32 Int32) empty
+  let hm = insert 0 0 hm
+  let hm = insert 1 1 hm
   putStrLn $ show @{Raw} hm
   printLn $ keys hm
+
   -- test "Test1" Test1
   -- test "Test2" Test2
   -- test "Test3" Test3

@@ -1,9 +1,9 @@
 module Data.HashMap.Internal
 
-import Data.Bits
 import public Data.Hashable
-import Data.HashMap.SparseArray
+import Data.HashMap.Bits
 import Data.HashMap.Array
+import Data.HashMap.SparseArray
 import Decidable.Equality
 
 %default total
@@ -31,14 +31,14 @@ data HAMT : (key : Type) -> (val : key -> Type) -> Type where
 %name HAMT hamt
 
 getMask : (depth : Bits64) -> Bits64
-getMask depth = baseMask `prim__shl_Bits64` (depth * chunkSize)
+getMask depth = baseMask `shiftL` (depth * chunkSize)
   where
     baseMask : Bits64
     baseMask = 0b111111
 
 export
-getIndex : (depth : Bits64) -> (hash : Bits64) -> Int
-getIndex depth hash = cast $ (getMask depth .&. hash) `prim__shr_Bits64` (depth * chunkSize)
+getIndex : (depth : Bits64) -> (hash : Bits64) -> Bits32
+getIndex depth hash = unsafeCast $ (getMask depth .&. hash) `shiftR` (depth * chunkSize)
 
 export
 singletonWithHash : (hash : Bits64) -> (k : key) -> val k -> HAMT key val
@@ -53,7 +53,7 @@ parameters
     {0 val : key -> Type}
     (keyEq : (x : key) -> (y : key) -> Bool)
 
-    lookupEntry : (k : key) -> (idx : Int) -> List (k ** val k) -> Maybe (Int, (k ** val k))
+    lookupEntry : (k : key) -> (idx : Bits32) -> List (k ** val k) -> Maybe (Bits32, (k ** val k))
     lookupEntry k idx [] = Nothing
     lookupEntry k idx (entry :: xs) = if keyEq k entry.fst
         then Just (idx, entry)
@@ -73,7 +73,7 @@ parameters
         else Nothing
     lookupWithHash k0 hash0 depth (Node arr) =
         let idx = getIndex depth hash0
-         in index (cast idx) arr >>=
+         in index idx arr >>=
             lookupWithHash k0 hash0 (assert_smaller depth $ depth + 1)
     lookupWithHash k0 hash0 depth (Collision hash1 arr) = if hash0 == hash1
         then
@@ -172,8 +172,8 @@ parameters
     deleteWithHash k h0 depth hamt@(Collision h1 arr) =
         if h0 == h1
             then case findIndex (keyEq k . fst) arr of
-                [] => Just hamt
-                idx :: _ =>
+                Nothing => Just hamt
+                Just idx =>
                     let arr' = delete idx arr
                      in case length arr' of
                         0 => Nothing

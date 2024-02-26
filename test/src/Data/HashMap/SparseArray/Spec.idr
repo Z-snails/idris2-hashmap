@@ -3,9 +3,9 @@ module Data.HashMap.SparseArray.Spec
 import Data.HashMap.SparseArray as SA
 import Hedgehog
 
-index, value : Gen Int
-index = int (linear 0 63)
-value = int (linear 0 1000)
+index, value : Gen Bits32
+index = bits32 (linear 0 63)
+value = bits32 (linear 0 1000)
 
 genSparseArray : Gen a -> Gen (SparseArray a)
 genSparseArray gen =
@@ -22,7 +22,7 @@ spec = MkGroup "Data.HashMap.SparseArray" [
         sarr === SA.fromList (SA.toList sarr)
     ),
     ("hasEntry,findIndex", withTests 1000 $ property $ do
-        idx <- forAll $ int $ linear 0 62
+        idx <- forAll $ bits32 $ linear 0 62
         let sarr = SA.fromList [(idx, 0)]
         hasEntry idx sarr === True
         findIndex idx sarr.bitmap === 0
