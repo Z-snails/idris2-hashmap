@@ -35,6 +35,20 @@ intSortNub lst@(x :: xs) acc =
         EQ => seperate x xs lt gt
         GT => seperate x xs lt (y :: gt)
 
+getBit : Int -> Bits64
+getBit k = 1 `prim__shl_Bits64` cast k
+
+export %inline
+singleton : (Int, a) -> SparseArray a
+singleton (k, v) = MkSparseArray (getBit k) (Array.singleton v)
+
+export
+doubleton : (Int, a) -> (Int, a) -> SparseArray a
+doubleton (k0, v0) (k1, v1) = case compare k0 k1 of
+    LT => MkSparseArray (getBit k0 .|. getBit k1) (fromList [v0, v1])
+    EQ => singleton (k1, v1)
+    GT => MkSparseArray (getBit k1 .|. getBit k0) (fromList [v1, v0])
+
 export
 fromList : List (Int, a) -> SparseArray a
 fromList xs =

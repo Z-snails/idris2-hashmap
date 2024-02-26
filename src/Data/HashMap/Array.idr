@@ -4,25 +4,33 @@ import Data.Fin
 import Data.IOArray.Prims
 import Data.List
 
--- eventually this may be its own package
-
 %default total
 
--- index differently
+%inline
+unsafeNewArray : Int -> IO (ArrayData a)
+unsafeNewArray len = fromPrim $ prim__newArray len (believe_me ())
+
+%inline
+unsafeInlinePerformIO : IO a -> a
+unsafeInlinePerformIO act =
+    let MkIORes res %MkWorld = toPrim act %MkWorld
+     in res
+
+-- Copy from[fromStart..fromStop) to to[toStart..)
 %spec f
 copyFromArrayBy :
     (from : ArrayData a) ->
     (to : ArrayData b) ->
-    (idxFrom : Int) ->
-    (idxTo : Int) ->
-    (lenFrom : Int) ->
+    (fromStart : Int) ->
+    (toStart : Int) ->
+    (fromStop : Int) ->
     (f : a -> b) ->
     IO ()
-copyFromArrayBy from to idxFrom idxTo lenFrom f = if idxFrom < lenFrom
+copyFromArrayBy from to fromStart toStart fromStop f = if fromStart < fromStop
     then do
-        val <- fromPrim $ prim__arrayGet from idxFrom
-        fromPrim $ prim__arraySet to idxTo (f val)
-        copyFromArrayBy from to (assert_smaller idxFrom $ idxFrom + 1) (idxTo + 1) lenFrom f
+        val <- fromPrim $ prim__arrayGet from fromStart
+        fromPrim $ prim__arraySet to toStart (f val)
+        copyFromArrayBy from to (assert_smaller fromStart $ fromStart + 1) (toStart + 1) fromStop f
     else pure ()
 
 copyFromArray :
@@ -32,7 +40,8 @@ copyFromArray :
     (idxTo : Int) ->
     (lenFrom : Int) ->
     IO ()
-copyFromArray from to idxFrom idxTo lenFrom = copyFromArrayBy from to idxFrom idxTo lenFrom id
+copyFromArray from to idxFrom idxTo lenFrom =
+    copyFromArrayBy from to idxFrom idxTo lenFrom id
 
 copyFromList : ArrayData a -> List a -> Int -> IO ()
 copyFromList arr [] idx = pure ()
@@ -42,20 +51,24 @@ copyFromList arr (x :: xs) idx = do
 
 export
 data Array : Type -> Type where
-    Empty : Array a
-    -- Safety: len >= 1
     MkArray : (len : Int) -> (arr : ArrayData a) -> Array a
 
 %name Array arr
 
 export
 empty : Array a
-empty = Empty
+empty = MkArray 0 $ unsafeInlinePerformIO $ unsafeNewArray 0
+
+export
+singleton : a -> Array a
+singleton x = unsafeInlinePerformIO $ do
+    arr <- fromPrim $ prim__newArray 1 x
+    pure $ MkArray 1 arr
 
 export
 fromList : (xs : List a) -> Array a
-fromList [] = Empty
-fromList (x :: xs) = unsafePerformIO $ do
+fromList [] = empty
+fromList (x :: xs) = unsafeInlinePerformIO $ do
     let len = 1 + cast (length xs)
     arr <- fromPrim $ prim__newArray len x
     fromPrim $ prim__arraySet arr 0 x
@@ -63,35 +76,34 @@ fromList (x :: xs) = unsafePerformIO $ do
     pure $ MkArray len arr
 
 toListOnto : Array a -> List a -> List a
-toListOnto Empty acc = acc
+toListOnto (MkArray 0 _) acc = acc
 toListOnto xs@(MkArray len arr) acc =
-    let last = unsafePerformIO $ fromPrim $ prim__arrayGet arr (len - 1)
+    let last = unsafeInlinePerformIO $ fromPrim $ prim__arrayGet arr (len - 1)
      in case len of
         1 => last :: acc
         _ => toListOnto (assert_smaller xs $ MkArray (len - 1) arr) (last :: acc)
 
-export
+export %inline
 length : Array a -> Int
-length Empty = 0
 length (MkArray len x) = len
+
+%inline
+unsafeIndex : Array a -> Int -> a
+unsafeIndex (MkArray _ arr) idx = unsafeInlinePerformIO $ fromPrim $ prim__arrayGet arr idx
 
 export
 index : Array a -> Int -> Maybe a
-index Empty idx = Nothing
-index (MkArray len arr) idx =
-    if idx < len
-        then Just $ unsafePerformIO $ fromPrim $ prim__arrayGet arr idx
+index arr idx =
+    if 0 <= idx && idx < length arr
+        then Just $ unsafeIndex arr idx
         else Nothing
 
 export
 update : Array a -> List (Int, a) -> Array a
 update arr [] = arr
-update Empty xs = Empty
-update (MkArray len arr) xs@(_ :: _) = unsafePerformIO $ do
-    init <- fromPrim $ prim__arrayGet arr 0 -- Safety: len >= 1
-    arr' <- fromPrim $ prim__newArray len init
-    fromPrim $ prim__arraySet arr 0 init
-    copyFromArray arr arr' 1 1 len
+update (MkArray len arr) xs = unsafeInlinePerformIO $ do
+    arr' <- unsafeNewArray len
+    copyFromArray arr arr' 0 0 len
     updateFromList arr' xs len
     pure $ MkArray len arr'
   where
@@ -107,32 +119,29 @@ update (MkArray len arr) xs@(_ :: _) = unsafePerformIO $ do
 
 export
 insert : (idx : Int) -> (val : a) -> Array a -> Array a
-insert 0 val Empty = fromList [val]
-insert _ val Empty = Empty
 insert idx val arr@(MkArray len orig) = if idx <= len
-    then unsafePerformIO $ do
-        init <- fromPrim $ prim__arrayGet orig 0
-        new <- fromPrim $ prim__newArray (len + 1) init
-        _ <- copyFromArray orig new 0 0 idx
-        _ <- fromPrim $ prim__arraySet new idx val
-        _ <- copyFromArray orig new idx (idx + 1) len
+    then unsafeInlinePerformIO $ do
+        new <- unsafeNewArray (len + 1)
+        copyFromArray orig new 0 0 idx
+        fromPrim $ prim__arraySet new idx val
+        copyFromArray orig new idx (idx + 1) len
         pure $ MkArray (len + 1) new
     else arr
 
 export
 delete : (idx : Int) -> Array a -> Array a
-delete idx Empty = Empty
-delete idx arr@(MkArray len orig) = if idx < len
-    then if len <= 1 then Empty else
-        unsafePerformIO $ do
-        init <- fromPrim $ prim__arrayGet orig 0
-        new <- fromPrim $ prim__newArray (len - 1) init
-        -- orig: 0 .. idx, new: 0 .. idx
-        copyFromArray orig new 0 0 idx
-        -- orig: idx + 1 .. len, new: idx .. len - 1
-        copyFromArray orig new (idx + 1) idx len
-        pure $ MkArray (len - 1) new
-    else arr
+delete idx arr@(MkArray len orig) =
+    if idx >= len
+        then arr
+    else if len <= 1
+        then empty
+    else unsafeInlinePerformIO $ do
+            new <- unsafeNewArray (len - 1)
+            -- orig: 0 .. idx, new: 0 .. idx
+            copyFromArray orig new 0 0 idx
+            -- orig: idx + 1 .. len, new: idx .. len - 1
+            copyFromArray orig new (idx + 1) idx len
+            pure $ MkArray (len - 1) new
 
 export
 findIndex : (a -> Bool) -> Array a -> List Int
@@ -141,7 +150,7 @@ findIndex f arr = findIndexOnto 0 []
     findIndexOnto : Int -> List Int -> List Int
     findIndexOnto idx acc = if idx < length arr
         then findIndexOnto (assert_smaller idx $ idx + 1)
-            (if maybe False f (index arr idx)
+            (if f (unsafeIndex arr idx)
                 then idx :: acc
                 else acc)
         else acc
@@ -152,13 +161,10 @@ append val arr = insert (length arr) val arr
 
 export
 Functor Array where
-    map f Empty = Empty
     map f (MkArray len arr) = MkArray len $
-        unsafePerformIO $ do
-            init <- fromPrim $ prim__arrayGet arr 0
-            arr' <- fromPrim $ prim__newArray len (f init)
-            fromPrim $ prim__arraySet arr' 0 (f init)
-            copyFromArrayBy arr arr' 1 1 len f
+        unsafeInlinePerformIO $ do
+            arr' <- unsafeNewArray len
+            copyFromArrayBy arr arr' 0 0 len f
             pure arr'
 
 foldrImpl :
@@ -166,12 +172,13 @@ foldrImpl :
     (f : elem -> acc -> acc) ->
     acc ->
     Int ->
-    ArrayData elem ->
+    Array elem ->
     acc
-foldrImpl f z 0 arr = z
-foldrImpl f z i arr =
-    let elem = unsafePerformIO $ fromPrim $ prim__arrayGet arr i
-     in foldrImpl f (f elem z) (assert_smaller i $ i - 1) arr
+foldrImpl f z i arr = if i < 0
+    then z
+    else
+        let elem = unsafeIndex arr i
+         in foldrImpl f (f elem z) (assert_smaller i $ i - 1) arr
 
 foldlImpl :
     {0 elem : _} ->
@@ -179,24 +186,21 @@ foldlImpl :
     acc ->
     (index : Int) ->
     (length : Int) ->
-    ArrayData elem ->
+    Array elem ->
     acc
-foldlImpl f z i len arr =
-    if i >= len
-        then z
-        else
-            let elem = unsafePerformIO $ fromPrim $ prim__arrayGet arr i
-             in foldlImpl f z (assert_smaller i $ i + 1) len arr
+foldlImpl f z i len arr = if i >= len
+    then z
+    else
+        let elem = unsafeIndex arr i
+         in foldlImpl f z (assert_smaller i $ i + 1) len arr
 
 export
 Foldable Array where
-    foldr f z Empty = z
-    foldr f z (MkArray len arr) = foldrImpl f z (len - 1) arr
+    foldr f z arr = foldrImpl f z (length arr - 1) arr
 
-    foldl f z Empty = z
-    foldl f z (MkArray len arr) = foldlImpl f z 0 len arr
+    foldl f z arr = foldlImpl f z 0 (length arr) arr
 
-    null arr = length (arr) == 0
+    null arr = length arr == 0
     toList arr = toListOnto arr []
     foldMap f arr = foldr (\elem, acc => f elem <+> acc) neutral arr
 
@@ -214,15 +218,10 @@ parameters (pred : a -> b -> Bool)
              in fromMaybe False [| pred x y |]
                 && allFrom (assert_smaller idx $ idx + 1) arr1 arr2
 
-    ||| Check if 
     export
     all : Array a -> Array b -> Bool
     all = allFrom 0
 
 export
 Eq a => Eq (Array a) where
-    Empty == Empty = True
-    x@(MkArray l1 _) == y@(MkArray l2 _) =
-        l1 == l2
-        && all (==) x y
-    _ == _ = False
+    x == y = length x == length y && all (==) x y

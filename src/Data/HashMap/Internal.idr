@@ -89,7 +89,7 @@ parameters
         Maybe (k ** val k)
     lookup k hamt = lookupWithHash k (hash k) 0 hamt
 
-    -- Invariants: hash0 /= hash1
+    -- Pre: hash0 /= hash1
     export
     node2 :
         (tree0 : HAMT key val) ->
@@ -101,10 +101,10 @@ parameters
     node2 hamt0 hash0 hamt1 hash1 depth =
         let idx0 = getIndex depth hash0
             idx1 = getIndex depth hash1
-         in Node (fromList
-            [ (idx0, hamt0)
-            , (idx1, hamt1)
-            ])
+         in if idx0 == idx1
+            then Node $ singleton
+                (idx0, (node2 hamt0 hash0 hamt1 hash1 (assert_smaller depth $ depth + 1)))
+            else Node $ doubleton (idx0, hamt0) (idx1, hamt1)
 
     export
     insertWithHash :
@@ -114,24 +114,25 @@ parameters
         (depth : Bits64) ->
         HAMT key val ->
         HAMT key val
-    insertWithHash k0 val0 hash0 depth hamt@(Leaf hash1 k1 val1) = if hash0 == hash1
-        then if keyEq k0 k1 -- hashes ==
-            then singletonWithHash hash0 k0 val0 -- keys == (replace)
-            else Collision hash0 (fromList [(k0 ** val0), (k1 ** val1)]) -- keys /= (collision)
-        else node2 (singletonWithHash hash0 k0 val0) hash0 hamt hash1 depth -- hashes /=
+    insertWithHash k0 val0 hash0 depth hamt@(Leaf hash1 k1 val1) =
+        if hash0 /= hash1
+            then node2 (singletonWithHash hash0 k0 val0) hash0 hamt hash1 depth
+        else if keyEq k0 k1
+            then Leaf hash0 k0 val0
+        else Collision hash0 (fromList [(k0 ** val0), (k1 ** val1)]) 
     insertWithHash k val hash0 depth (Node arr) =
         let idx = getIndex depth hash0
          in case index idx arr of
-            Just hamt => Node $ set idx -- got entry at this index
+            Just hamt => Node $ set idx
                 (insertWithHash k val hash0 (assert_smaller depth $ depth + 1) hamt)
                 arr
-            Nothing => Node $ set idx (singletonWithHash hash0 k val) arr -- new entry at this index
+            Nothing => Node $ set idx (singletonWithHash hash0 k val) arr 
     insertWithHash k val hash0 depth hamt@(Collision hash1 arr) =
         if hash0 == hash1
-            then case lookupEntry k 0 (toList arr) of -- hashes ==
-                Just (idx, _) => Collision hash1 (update arr [(idx, (k ** val))]) -- keys == (replace)
-                Nothing => Collision hash1 (append (k ** val) arr) -- keys /= (insert)
-            else node2 (singletonWithHash hash0 k val) hash0 hamt hash1 depth -- hashes /=
+            then case lookupEntry k 0 (toList arr) of
+                Just (idx, _) => Collision hash1 (update arr [(idx, (k ** val))])
+                Nothing => Collision hash1 (append (k ** val) arr)
+            else node2 (singletonWithHash hash0 k val) hash0 hamt hash1 depth
 
     export
     insert :
@@ -172,7 +173,7 @@ parameters
         if h0 == h1
             then case findIndex (keyEq k . fst) arr of
                 [] => Just hamt
-                idx :: _ => -- _ should always be empty
+                idx :: _ =>
                     let arr' = delete idx arr
                      in case length arr' of
                         0 => Nothing
