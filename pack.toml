@@ -1,0 +1,15 @@
+[custom.all.hashmap]
+type = "local"
+path = "."
+ipkg = "hashmap.ipkg"
+test = "test/test.ipkg"
+
+[custom.all.hashmap-test]
+type = "local"
+path = "test"
+ipkg = "test.ipkg"
+
+[custom.all.hashmap-bench]
+type = "local"
+path = "bench"
+ipkg = "bench.ipkg"

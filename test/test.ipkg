@@ -1,5 +1,5 @@
 package hashmap-test
--- version =
+version = 0.1.0
 authors = "Zoe Stafford"
 -- maintainers =
 -- license =
@@ -13,16 +13,16 @@ authors = "Zoe Stafford"
 -- langversion
 
 -- packages to add to search path
-depends = hashable, hedgehog, sop, elab-util, contrib, pretty-show
+depends = hashable, hedgehog, hashmap
 
 -- modules to install
--- modules
+-- modules =
 
 -- main file (i.e. file to load at REPL)
 main = Spec
 
 -- name of executable
-executable = hashmap-test
+executable = "hashmap-test"
 -- opts =
 sourcedir = "src"
 -- builddir =
